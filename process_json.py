@@ -144,7 +144,7 @@ llm_input = prompt_template.format(
 
 # Initialize the Generative Model
 try:
-    model = genai.GenerativeModel('gemini-2.5-pro-exp-03-25') # Using gemini-2.5-pro-exp-03-25 as a default
+    model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25') # Using gemini-2.5-pro-preview-03-25 as a default
 except Exception as e:
     print(f"Error initializing the model: {e}")
     exit(1)
