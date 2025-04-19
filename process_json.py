@@ -4,6 +4,14 @@ import google.generativeai as genai
 from google.api_core import exceptions
 import requests
 from market_data import get_filtered_protocols # Import the function
+import pandas as pd # Added for potential data handling if needed here
+import numpy as np  # Added for potential array handling if needed here
+from portfolio_simulation import ( # Added import
+    fetch_historical_returns,
+    estimate_parameters,
+    run_monte_carlo,
+    summarize_results
+)
 
 # Configure the API key
 try:
@@ -166,4 +174,82 @@ except exceptions.ResourceExhausted as e:
      print(f"Error: API quota exceeded. Details: {e}")
 except Exception as e:
     print(f"An unexpected error occurred while calling the Gemini API: {e}")
-    exit(1) 
+    exit(1)
+
+# --- Portfolio Simulation ---
+# Extract necessary info after getting LLM response
+strategy_json_str = None
+if hasattr(response, 'text'):
+    strategy_json_str = response.text
+elif hasattr(response, 'parts'):
+    strategy_json_str = "".join(part.text for part in response.parts if hasattr(part, 'text'))
+
+if strategy_json_str:
+    try:
+        # Attempt to parse the JSON response from LLM
+        # Need to handle potential markdown ```json ... ``` wrapping
+        if strategy_json_str.strip().startswith("```json"):
+            strategy_json_str = strategy_json_str.strip()[7:-3].strip()
+        elif strategy_json_str.strip().startswith("```"):
+             strategy_json_str = strategy_json_str.strip()[3:-3].strip()
+
+        strategy_data = json.loads(strategy_json_str)
+
+        # Assuming the response is a list containing one strategy object
+        if isinstance(strategy_data, list) and len(strategy_data) > 0:
+            strategy = strategy_data[0]
+            allocations = strategy.get("allocations")
+            initial_capital = user_profile.get("fund")
+            time_horizon_months = user_profile.get("time_horizon")
+
+            if allocations and initial_capital is not None and time_horizon_months is not None:
+                print("\n--- Running Portfolio Simulation ---")
+                protocol_names = [a['protocol'] for a in allocations]
+
+                # 1. Fetch Historical Data (using mock function for now)
+                # Consider adding a lookback period relevant to time_horizon?
+                returns_df = fetch_historical_returns(protocol_names)
+
+                if returns_df is not None:
+                    # 2. Estimate Parameters
+                    mean_returns, cov_matrix = estimate_parameters(returns_df)
+
+                    if mean_returns is not None and cov_matrix is not None:
+                        # 3. Run Monte Carlo Simulation
+                        final_portfolio_values = run_monte_carlo(
+                            initial_capital=initial_capital,
+                            time_horizon_months=time_horizon_months,
+                            allocations=allocations,
+                            mean_returns=mean_returns,
+                            cov_matrix=cov_matrix,
+                            num_simulations=1000 # Example simulation count
+                        )
+
+                        if final_portfolio_values is not None:
+                            # 4. Summarize Results
+                            simulation_summary = summarize_results(final_portfolio_values)
+
+                            if simulation_summary:
+                                print("\n--- Simulation Results ---")
+                                print(json.dumps(simulation_summary, indent=2))
+                                print("--------------------------")
+                            else:
+                                print("Failed to summarize simulation results.")
+                        else:
+                             print("Monte Carlo simulation failed to produce results.")
+                    else:
+                        print("Failed to estimate statistical parameters from historical data.")
+                else:
+                    print("Failed to fetch or generate historical return data for simulation.")
+            else:
+                print("Could not extract necessary 'allocations', 'fund', or 'time_horizon' for simulation.")
+        else:
+            print("Could not parse valid strategy object from LLM response.")
+
+    except json.JSONDecodeError as e:
+        print(f"Error decoding JSON from Gemini response: {e}")
+        print(f"Raw response string was: {strategy_json_str}")
+    except Exception as e:
+        print(f"An unexpected error occurred during portfolio simulation: {e}")
+else:
+    print("No valid response text received from Gemini to run simulation.")
