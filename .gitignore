@@ -14,3 +14,5 @@ __pycache__/
 
 # Specific artifacts found
 .___pycache__
+
+.env

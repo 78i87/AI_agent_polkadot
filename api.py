@@ -150,12 +150,16 @@ def run_portfolio_simulation(strategy: dict, user_profile: dict) -> dict | None:
             print("Error: Failed to estimate statistical parameters from historical data.")
             return {"error": "Failed to estimate parameters from historical data"}
 
+        # Get risk_level from the user profile
+        risk_level = user_profile.get("risk_level", "medium") # Default to medium if missing
+
         final_portfolio_values = run_monte_carlo(
             initial_capital=initial_capital,
             time_horizon_months=time_horizon_months,
             allocations=allocations,
             mean_returns=mean_returns,
             cov_matrix=cov_matrix,
+            risk_level=risk_level, # Pass the risk level
             num_simulations=1000 # Keep consistent or make configurable?
         )
 

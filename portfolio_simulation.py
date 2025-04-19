@@ -264,19 +264,27 @@ def run_monte_carlo(
     allocations: list[dict],
     mean_returns: np.ndarray,
     cov_matrix: np.ndarray,
+    risk_level: str = 'medium',
     num_simulations: int = 1000,
+    risk_drift_factor: float = 0.8,
     # rebalance_frequency_days: int = 30 # Rebalancing logic can be added later
 ) -> np.ndarray | None:
     """
     Runs a Monte Carlo simulation for portfolio value projection.
+    Overall expected returns are scaled down by a constant factor.
+    Volatility is adjusted based on risk level ('low', 'medium', 'high').
+    A small daily drift (positive for high risk, negative for low risk) is added
+    to the mean returns, proportional to asset standard deviation.
 
     Args:
         initial_capital: Starting investment amount.
         time_horizon_months: Investment duration in months.
         allocations: List of dicts [{"protocol": name, "weight_pct": weight}].
-        mean_returns: Expected daily mean return vector for assets.
-        cov_matrix: Covariance matrix of daily returns for assets.
+        mean_returns: Base expected daily mean return vector (from historical data).
+        cov_matrix: Base covariance matrix of daily returns (from historical data).
+        risk_level: User risk preference ('low', 'medium', 'high'). Affects simulated volatility and mean return drift.
         num_simulations: Number of simulation paths to generate.
+        risk_drift_factor: Fraction of daily standard deviation to add (high risk) or subtract (low risk) from the mean daily return.
 
     Returns:
         An array of final portfolio values for each simulation, or None if simulation fails.
@@ -286,6 +294,9 @@ def run_monte_carlo(
         return None
 
     try:
+        print(f"--- Monte Carlo Simulation ---") # Added for clarity
+        print(f"Received risk_level: {risk_level}") # Log the risk level
+
         num_assets = len(allocations)
         if num_assets != len(mean_returns) or num_assets != cov_matrix.shape[0]:
              print("Error: Mismatch between allocations and return/covariance data.")
@@ -298,13 +309,41 @@ def run_monte_carlo(
              # Optional: Normalize weights if they exceed 1, or just proceed if slightly over
              # weights = weights / weights.sum()
 
+        # Define volatility scaling factor and mean drift direction based on risk level
+        drift_multiplier = 0.0 # For medium risk
+        if risk_level == 'low':
+            volatility_scale = 0.65
+            drift_multiplier = 0.0
+            overall_mean_return_scale = 0.8 # Low risk -> smaller reduction
+        elif risk_level == 'high':
+            volatility_scale = 1.7
+            drift_multiplier = 0.0
+            overall_mean_return_scale = 1.0 # High risk -> larger reduction
+        else: # Default to medium
+            volatility_scale = 1.0
+            drift_multiplier = 0.0
+            overall_mean_return_scale = 0.8 # Add assignment for medium risk
+
+        # Scale the covariance matrix based on risk level
+        scaled_cov_matrix = cov_matrix * (volatility_scale ** 2)
+        
+        # Calculate risk-based drift adjustment
+        # Use standard deviation from the *scaled* covariance matrix
+        scaled_std_devs = np.sqrt(np.diag(scaled_cov_matrix))
+        # Ensure std devs are non-negative
+        scaled_std_devs = np.maximum(scaled_std_devs, 0) 
+        drift_adjustment = scaled_std_devs * risk_drift_factor * drift_multiplier
+
+        # Apply drift to get final simulation mean returns
+        simulation_mean_returns = mean_returns * overall_mean_return_scale + drift_adjustment
+
         num_days = time_horizon_months * 30 # Approximate days
         all_final_values = np.zeros(num_simulations)
 
         for i in range(num_simulations):
             portfolio_value = initial_capital
-            # Simulate day by day - simple compounding without rebalancing for now
-            daily_returns_sim = np.random.multivariate_normal(mean_returns, cov_matrix, num_days)
+            # Simulate day by day using the drift-adjusted mean returns and scaled covariance matrix
+            daily_returns_sim = np.random.multivariate_normal(simulation_mean_returns, scaled_cov_matrix, num_days)
             portfolio_daily_returns = np.dot(daily_returns_sim, weights)
 
             # Calculate compounded growth

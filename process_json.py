@@ -80,7 +80,7 @@ Base on the user's **time-horizon**, then tweak by **risk level**.
 1. Start with the protocols provided in the Market Data (already filtered by `preferred_activities`).
 2. Select protocols that align well with the user's `investment_goals`.
 3. From the aligned protocols, rank the remainder by **TVL (highest first)**.
-4. Pick the top **<= 3** names so the strategy is simple to follow.
+4. Pick the top **<= 5** names so the strategy is simple to follow.
 5. Allocate weights across the chosen names, but cap total exposure at `max_exposure`.
 
 ════════ REQUIRED OUTPUT KEYS ════════
@@ -101,6 +101,8 @@ Respond with **exactly** one JSON array containing one object, no commentary:
     ]
   }}
 ]
+
+IT MUST BE IN JSON FORMAT.
 """
 
 # --- Data Loading and Preparation ---
@@ -216,12 +218,16 @@ if strategy_json_str:
 
                     if mean_returns is not None and cov_matrix is not None:
                         # 3. Run Monte Carlo Simulation
+                        # Get risk_level from the user profile
+                        risk_level = user_profile.get("risk_level", "medium") # Default to medium if missing
+
                         final_portfolio_values = run_monte_carlo(
                             initial_capital=initial_capital,
                             time_horizon_months=time_horizon_months,
                             allocations=allocations,
                             mean_returns=mean_returns,
                             cov_matrix=cov_matrix,
+                            risk_level=risk_level, # Pass the risk level
                             num_simulations=1000 # Example simulation count
                         )
 
